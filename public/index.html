@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Kanban - Cloud Edition</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #161b22;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .auth-section {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .board-container {
+            display: flex;
+            gap: 1rem;
+            padding: 2rem;
+            overflow-x: auto;
+            min-height: calc(100vh - 100px);
+        }
+
+        .column {
+            background: #161b22;
+            border-radius: 6px;
+            min-width: 300px;
+            max-width: 350px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #30363d;
+            height: fit-content;
+            min-height: 300px;
+        }
+
+        .column-header {
+            padding: 1rem;
+            font-weight: 600;
+            border-bottom: 2px solid #30363d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .cards-container {
+            flex: 1;
+            padding: 0.5rem;
+            min-height: 200px;
+        }
+
+        .card {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            cursor: move;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .card:hover {
+            border-color: #58a6ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(88, 166, 255, 0.2);
+        }
+
+        .card.dragging {
+            opacity: 0.5;
+        }
+
+        .card.drag-over {
+            border-color: #58a6ff;
+            border-style: dashed;
+        }
+
+        .sync-indicator {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            width: 8px;
+            height: 8px;
+            background: #3fb950;
+            border-radius: 50%;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .sync-indicator.syncing {
+            opacity: 1;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .btn {
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            border: none;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: #238636;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2ea043;
+        }
+
+        .btn-secondary {
+            background: #21262d;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: #161b22;
+            margin: 5% auto;
+            padding: 2rem;
+            width: 90%;
+            max-width: 600px;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 0.5rem;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            font-family: inherit;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+        }
+
+        .close-btn {
+            float: right;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #8b949e;
+        }
+
+        .close-btn:hover {
+            color: #f85149;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #8b949e;
+        }
+
+        .claude-chat {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 400px;
+            max-width: 90vw;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            display: none;
+            flex-direction: column;
+            height: 500px;
+            max-height: 70vh;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .claude-chat.active {
+            display: flex;
+        }
+
+        .chat-header {
+            padding: 1rem;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .message {
+            padding: 0.75rem;
+            border-radius: 6px;
+            max-width: 80%;
+        }
+
+        .message.user {
+            background: #1f6feb;
+            align-self: flex-end;
+        }
+
+        .message.claude {
+            background: #30363d;
+            align-self: flex-start;
+        }
+
+        .message.system {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            align-self: center;
+            font-size: 0.875rem;
+            color: #8b949e;
+            text-align: center;
+        }
+
+        .chat-input {
+            padding: 1rem;
+            border-top: 1px solid #30363d;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .chat-input textarea {
+            flex: 1;
+            resize: none;
+        }
+
+        .floating-btn {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: #238636;
+            color: white;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s;
+        }
+
+        .floating-btn:hover {
+            transform: scale(1.1);
+            background: #2ea043;
+        }
+
+        @media (max-width: 768px) {
+            .board-container {
+                padding: 1rem;
+            }
+            
+            .column {
+                min-width: 280px;
+            }
+
+            .claude-chat {
+                width: 100%;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                max-width: 100%;
+                border-radius: 0;
+                border-left: none;
+                border-right: none;
+                border-bottom: none;
+            }
+        }
+
+        /* Emoji icons for columns */
+        .backlog::before { content: "🎯 "; }
+        .todo::before { content: "📋 "; }
+        .progress::before { content: "🚀 "; }
+        .review::before { content: "🔍 "; }
+        .done::before { content: "✅ "; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>☁️ Claude Kanban - Cloud Edition</h1>
+        <div class="auth-section">
+            <span id="userEmail" style="color: #8b949e;"></span>
+            <button class="btn btn-secondary" onclick="showAuthModal()" id="authBtn">Sign In</button>
+            <button class="btn btn-primary" onclick="showApiKeyModal()">🔑 Claude API</button>
+        </div>
+    </div>
+
+    <div id="loadingMessage" class="loading">Initializing...</div>
+
+    <div class="board-container" id="boardContainer" style="display: none;">
+        <!-- Columns will be generated here -->
+    </div>
+
+    <!-- New/Edit Project Modal -->
+    <div id="projectModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeProjectModal()">&times;</span>
+            <h2 id="modalTitle">New Project</h2>
+            <form id="projectForm" onsubmit="saveProject(event)">
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" id="projectTitle" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="projectDescription" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Priority</label>
+                    <select id="projectPriority">
+                        <option value="high">🔴 High</option>
+                        <option value="medium" selected>🟡 Medium</option>
+                        <option value="low">🟢 Low</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Subtasks (one per line)</label>
+                    <textarea id="projectSubtasks" rows="5" placeholder="Design UI&#10;[x] Set up database&#10;Create API endpoints"></textarea>
+                    <small style="color: #8b949e;">Tip: Use [x] to mark completed tasks</small>
+                </div>
+                <input type="hidden" id="projectId">
+                <input type="hidden" id="projectColumn">
+                <button type="submit" class="btn btn-primary">Save Project</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Auth Modal -->
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeAuthModal()">&times;</span>
+            <h2>Sign In / Sign Up</h2>
+            <form id="authForm" onsubmit="handleAuth(event)">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="authEmail" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="authPassword" required minlength="6">
+                </div>
+                <div style="display: flex; gap: 1rem;">
+                    <button type="submit" name="action" value="signin" class="btn btn-primary">Sign In</button>
+                    <button type="submit" name="action" value="signup" class="btn btn-secondary">Sign Up</button>
+                </div>
+            </form>
+            <p style="margin-top: 1rem; color: #8b949e; font-size: 0.875rem;">
+                Or continue as guest (data won't sync across devices)
+            </p>
+        </div>
+    </div>
+
+    <!-- API Key Modal -->
+    <div id="apiKeyModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeApiKeyModal()">&times;</span>
+            <h2>Claude API Configuration</h2>
+            <form onsubmit="saveApiKey(event)">
+                <div class="form-group">
+                    <label>Claude API Key (Optional)</label>
+                    <input type="password" id="apiKey" placeholder="sk-ant-api03-...">
+                    <small style="color: #8b949e;">
+                        Enter your Claude API key for direct integration. 
+                        Without it, you'll get copy/paste commands.
+                    </small>
+                </div>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Claude Chat -->
+    <div class="claude-chat" id="claudeChat">
+        <div class="chat-header">
+            <h3 id="chatProjectTitle">Select a project</h3>
+            <span class="close-btn" onclick="closeChat()">&times;</span>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <!-- Messages will appear here -->
+        </div>
+        <div class="chat-input">
+            <textarea id="chatInput" rows="2" placeholder="Ask Claude..."></textarea>
+            <button class="btn btn-primary" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <!-- Floating Chat Button -->
+    <button class="floating-btn" onclick="toggleChat()" id="floatingBtn">💬</button>
+
+    <script>
+        // Configuration
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL'; // Will be set via environment
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; // Will be set via environment
+        
+        let supabase = null;
+        let currentUser = null;
+        let projects = [];
+        let currentProject = null;
+        let boardData = {
+            columns: ['backlog', 'todo', 'progress', 'review', 'done'],
+            columnNames: {
+                backlog: 'Backlog',
+                todo: 'To Do',
+                progress: 'In Progress',
+                review: 'Review',
+                done: 'Done'
+            }
+        };
+
+        // Initialize
+        async function init() {
+            // Try to get config from API
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                
+                if (config.supabaseUrl && config.supabaseAnonKey) {
+                    supabase = supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+                    await checkAuth();
+                } else {
+                    // Use local storage fallback
+                    useLocalStorage();
+                }
+            } catch (error) {
+                console.log('Using local storage mode');
+                useLocalStorage();
+            }
+        }
+
+        function useLocalStorage() {
+            document.getElementById('loadingMessage').textContent = 'Running in local mode';
+            document.getElementById('authBtn').style.display = 'none';
+            loadLocalProjects();
+            initBoard();
+        }
+
+        async function checkAuth() {
+            if (!supabase) return;
+            
+            const { data: { user } } = await supabase.auth.getUser();
+            currentUser = user;
+            
+            if (user) {
+                document.getElementById('userEmail').textContent = user.email;
+                document.getElementById('authBtn').textContent = 'Sign Out';
+                document.getElementById('authBtn').onclick = signOut;
+                await loadProjects();
+            } else {
+                document.getElementById('authBtn').textContent = 'Sign In';
+                loadLocalProjects();
+            }
+            
+            initBoard();
+        }
+
+        // Board initialization
+        function initBoard() {
+            const boardContainer = document.getElementById('boardContainer');
+            boardContainer.innerHTML = '';
+            
+            boardData.columns.forEach(col => {
+                const column = document.createElement('div');
+                column.className = 'column';
+                column.dataset.column = col;
+                column.ondrop = drop;
+                column.ondragover = allowDrop;
+                column.ondragleave = dragLeave;
+                
+                column.innerHTML = `
+                    <div class="column-header">
+                        <span class="${col}">${boardData.columnNames[col]}</span>
+                        <span class="count">0</span>
+                    </div>
+                    <div class="cards-container"></div>
+                    <button class="btn" style="margin: 0.5rem; width: calc(100% - 1rem);" onclick="newProject('${col}')">
+                        + Add Card
+                    </button>
+                `;
+                
+                boardContainer.appendChild(column);
+            });
+            
+            document.getElementById('loadingMessage').style.display = 'none';
+            boardContainer.style.display = 'flex';
+            
+            renderProjects();
+        }
+
+        // Project management
+        async function loadProjects() {
+            if (!supabase || !currentUser) {
+                loadLocalProjects();
+                return;
+            }
+            
+            const { data, error } = await supabase
+                .from('projects')
+                .select('*')
+                .eq('user_id', currentUser.id)
+                .order('created_at', { ascending: false });
+                
+            if (error) {
+                console.error('Error loading projects:', error);
+                loadLocalProjects();
+                return;
+            }
+            
+            projects = data || [];
+            renderProjects();
+        }
+
+        function loadLocalProjects() {
+            const stored = localStorage.getItem('claudeKanbanProjects');
+            projects = stored ? JSON.parse(stored) : [];
+            renderProjects();
+        }
+
+        function renderProjects() {
+            // Clear all columns
+            boardData.columns.forEach(col => {
+                const container = document.querySelector(`[data-column="${col}"] .cards-container`);
+                if (container) container.innerHTML = '';
+            });
+            
+            // Render each project
+            projects.forEach(project => {
+                const column = project.column || 'backlog';
+                const container = document.querySelector(`[data-column="${column}"] .cards-container`);
+                if (!container) return;
+                
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.draggable = true;
+                card.dataset.projectId = project.id;
+                card.ondragstart = drag;
+                
+                const priorityEmoji = {
+                    high: '🔴',
+                    medium: '🟡',
+                    low: '🟢'
+                };
+                
+                const subtasks = project.subtasks || [];
+                const completedCount = subtasks.filter(t => t.done).length;
+                const subtaskProgress = subtasks.length > 0 ? 
+                    `<div style="font-size: 0.875rem; color: #8b949e; margin-top: 0.5rem;">
+                        ✅ ${completedCount}/${subtasks.length} tasks complete
+                    </div>` : '';
+                
+                card.innerHTML = `
+                    <div class="sync-indicator"></div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                        <strong>${project.title}</strong>
+                        <span>${priorityEmoji[project.priority || 'medium']}</span>
+                    </div>
+                    <div style="font-size: 0.875rem; color: #8b949e;">
+                        ${project.description || 'No description'}
+                    </div>
+                    ${subtaskProgress}
+                    <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+                        <button class="btn btn-primary" onclick="openChat('${project.id}')" style="flex: 1;">
+                            💬 Chat
+                        </button>
+                        <button class="btn btn-secondary" onclick="editProject('${project.id}')">✏️</button>
+                        <button class="btn btn-secondary" onclick="deleteProject('${project.id}')">🗑️</button>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            });
+            
+            // Update counts
+            updateColumnCounts();
+        }
+
+        function updateColumnCounts() {
+            boardData.columns.forEach(col => {
+                const count = projects.filter(p => (p.column || 'backlog') === col).length;
+                const countEl = document.querySelector(`[data-column="${col}"] .count`);
+                if (countEl) countEl.textContent = count;
+            });
+        }
+
+        // CRUD operations
+        function newProject(column) {
+            document.getElementById('modalTitle').textContent = 'New Project';
+            document.getElementById('projectId').value = '';
+            document.getElementById('projectColumn').value = column;
+            document.getElementById('projectForm').reset();
+            document.getElementById('projectModal').style.display = 'block';
+        }
+
+        function editProject(projectId) {
+            const project = projects.find(p => p.id === projectId);
+            if (!project) return;
+            
+            document.getElementById('modalTitle').textContent = 'Edit Project';
+            document.getElementById('projectId').value = project.id;
+            document.getElementById('projectColumn').value = project.column || 'backlog';
+            document.getElementById('projectTitle').value = project.title;
+            document.getElementById('projectDescription').value = project.description || '';
+            document.getElementById('projectPriority').value = project.priority || 'medium';
+            
+            const subtasksText = (project.subtasks || [])
+                .map(t => (t.done ? '[x] ' : '') + t.text)
+                .join('\n');
+            document.getElementById('projectSubtasks').value = subtasksText;
+            
+            document.getElementById('projectModal').style.display = 'block';
+        }
+
+        async function saveProject(event) {
+            event.preventDefault();
+            
+            const projectId = document.getElementById('projectId').value;
+            const subtasksText = document.getElementById('projectSubtasks').value;
+            const subtasks = subtasksText.split('\n')
+                .filter(line => line.trim())
+                .map(line => {
+                    const trimmed = line.trim();
+                    const done = trimmed.startsWith('[x]') || trimmed.startsWith('[X]');
+                    const text = trimmed.replace(/^\\[x\\]\\s*/i, '').trim();
+                    return { text, done };
+                });
+            
+            const projectData = {
+                title: document.getElementById('projectTitle').value,
+                description: document.getElementById('projectDescription').value,
+                priority: document.getElementById('projectPriority').value,
+                column: document.getElementById('projectColumn').value,
+                subtasks: subtasks
+            };
+            
+            if (projectId) {
+                // Update existing
+                const index = projects.findIndex(p => p.id === projectId);
+                if (index >= 0) {
+                    projects[index] = { ...projects[index], ...projectData };
+                    showSyncIndicator(projectId);
+                }
+            } else {
+                // Create new
+                const newProject = {
+                    ...projectData,
+                    id: generateId(),
+                    created_at: new Date().toISOString()
+                };
+                projects.push(newProject);
+            }
+            
+            await saveProjects();
+            renderProjects();
+            closeProjectModal();
+        }
+
+        async function deleteProject(projectId) {
+            if (!confirm('Delete this project?')) return;
+            
+            projects = projects.filter(p => p.id !== projectId);
+            await saveProjects();
+            renderProjects();
+            
+            if (currentProject && currentProject.id === projectId) {
+                closeChat();
+            }
+        }
+
+        async function saveProjects() {
+            if (supabase && currentUser) {
+                // Save to Supabase
+                for (const project of projects) {
+                    const { error } = await supabase
+                        .from('projects')
+                        .upsert({
+                            ...project,
+                            user_id: currentUser.id
+                        });
+                    
+                    if (error) {
+                        console.error('Error saving project:', error);
+                    }
+                }
+            } else {
+                // Save to local storage
+                localStorage.setItem('claudeKanbanProjects', JSON.stringify(projects));
+            }
+        }
+
+        // Drag and drop
+        let draggedElement = null;
+
+        function drag(ev) {
+            draggedElement = ev.target;
+            ev.target.classList.add('dragging');
+        }
+
+        function allowDrop(ev) {
+            ev.preventDefault();
+            const column = ev.target.closest('.column');
+            if (column) column.classList.add('drag-over');
+        }
+
+        function dragLeave(ev) {
+            const column = ev.target.closest('.column');
+            if (column) column.classList.remove('drag-over');
+        }
+
+        async function drop(ev) {
+            ev.preventDefault();
+            const column = ev.target.closest('.column');
+            if (!column || !draggedElement) return;
+            
+            column.classList.remove('drag-over');
+            draggedElement.classList.remove('dragging');
+            
+            const projectId = draggedElement.dataset.projectId;
+            const newColumn = column.dataset.column;
+            
+            const project = projects.find(p => p.id === projectId);
+            if (project && project.column !== newColumn) {
+                project.column = newColumn;
+                showSyncIndicator(projectId);
+                await saveProjects();
+                renderProjects();
+            }
+        }
+
+        // Chat functionality
+        function openChat(projectId) {
+            currentProject = projects.find(p => p.id === projectId);
+            if (!currentProject) return;
+            
+            document.getElementById('chatProjectTitle').textContent = currentProject.title;
+            document.getElementById('claudeChat').classList.add('active');
+            document.getElementById('floatingBtn').style.display = 'none';
+            
+            // Load chat history
+            loadChatHistory(projectId);
+        }
+
+        function closeChat() {
+            document.getElementById('claudeChat').classList.remove('active');
+            document.getElementById('floatingBtn').style.display = 'block';
+            currentProject = null;
+        }
+
+        function toggleChat() {
+            if (document.getElementById('claudeChat').classList.contains('active')) {
+                closeChat();
+            } else if (projects.length > 0) {
+                // Open chat for first in-progress project or first project
+                const inProgress = projects.find(p => p.column === 'progress');
+                openChat(inProgress ? inProgress.id : projects[0].id);
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message || !currentProject) return;
+            
+            addMessageToChat('user', message);
+            input.value = '';
+            
+            // Check if API key exists
+            const apiKey = localStorage.getItem('claudeApiKey');
+            if (apiKey) {
+                // Direct API call (would need backend)
+                addMessageToChat('system', 'Direct Claude integration coming soon!');
+            } else {
+                // Generate command for user
+                const context = {
+                    project: currentProject,
+                    message: message,
+                    timestamp: new Date().toISOString()
+                };
+                
+                const command = generateClaudeCommand(context);
+                addMessageToChat('claude', `Copy this context to Claude:\n\n${command}`);
+            }
+            
+            // Save chat history
+            saveChatMessage(currentProject.id, message, 'user');
+        }
+
+        function generateClaudeCommand(context) {
+            return `[KANBAN PROJECT CONTEXT]
+Project: ${context.project.title} (ID: ${context.project.id})
+Description: ${context.project.description || 'No description'}
+Priority: ${context.project.priority || 'medium'}
+Current Column: ${context.project.column || 'backlog'}
+
+Subtasks:
+${(context.project.subtasks || []).map(t => `- [${t.done ? 'x' : ' '}] ${t.text}`).join('\n')}
+
+USER MESSAGE: ${context.message}
+
+Please provide assistance with this project.`;
+        }
+
+        function addMessageToChat(sender, text) {
+            const container = document.getElementById('chatMessages');
+            const msgEl = document.createElement('div');
+            msgEl.className = `message ${sender}`;
+            msgEl.textContent = text;
+            container.appendChild(msgEl);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function loadChatHistory(projectId) {
+            const container = document.getElementById('chatMessages');
+            container.innerHTML = '';
+            
+            const history = JSON.parse(localStorage.getItem(`chat_${projectId}`) || '[]');
+            history.forEach(msg => {
+                addMessageToChat(msg.sender, msg.text);
+            });
+        }
+
+        function saveChatMessage(projectId, text, sender) {
+            const history = JSON.parse(localStorage.getItem(`chat_${projectId}`) || '[]');
+            history.push({ text, sender, timestamp: new Date().toISOString() });
+            localStorage.setItem(`chat_${projectId}`, JSON.stringify(history));
+        }
+
+        // Modal functions
+        function closeProjectModal() {
+            document.getElementById('projectModal').style.display = 'none';
+            document.getElementById('projectForm').reset();
+        }
+
+        function showAuthModal() {
+            if (currentUser) {
+                signOut();
+            } else {
+                document.getElementById('authModal').style.display = 'block';
+            }
+        }
+
+        function closeAuthModal() {
+            document.getElementById('authModal').style.display = 'none';
+        }
+
+        function showApiKeyModal() {
+            document.getElementById('apiKeyModal').style.display = 'block';
+            const savedKey = localStorage.getItem('claudeApiKey');
+            if (savedKey) {
+                document.getElementById('apiKey').value = savedKey;
+            }
+        }
+
+        function closeApiKeyModal() {
+            document.getElementById('apiKeyModal').style.display = 'none';
+        }
+
+        async function handleAuth(event) {
+            event.preventDefault();
+            const action = event.submitter.value;
+            const email = document.getElementById('authEmail').value;
+            const password = document.getElementById('authPassword').value;
+            
+            if (!supabase) {
+                alert('Cloud sync not available. Using local storage.');
+                closeAuthModal();
+                return;
+            }
+            
+            if (action === 'signup') {
+                const { error } = await supabase.auth.signUp({ email, password });
+                if (error) {
+                    alert(error.message);
+                } else {
+                    alert('Check your email to confirm your account!');
+                }
+            } else {
+                const { error } = await supabase.auth.signIn({ email, password });
+                if (error) {
+                    alert(error.message);
+                }
+            }
+            
+            await checkAuth();
+            closeAuthModal();
+        }
+
+        async function signOut() {
+            if (supabase) {
+                await supabase.auth.signOut();
+            }
+            currentUser = null;
+            document.getElementById('userEmail').textContent = '';
+            document.getElementById('authBtn').textContent = 'Sign In';
+            document.getElementById('authBtn').onclick = showAuthModal;
+            loadLocalProjects();
+        }
+
+        function saveApiKey(event) {
+            event.preventDefault();
+            const apiKey = document.getElementById('apiKey').value;
+            if (apiKey) {
+                localStorage.setItem('claudeApiKey', apiKey);
+            } else {
+                localStorage.removeItem('claudeApiKey');
+            }
+            closeApiKeyModal();
+        }
+
+        function showSyncIndicator(projectId) {
+            const card = document.querySelector(`[data-project-id="${projectId}"] .sync-indicator`);
+            if (card) {
+                card.classList.add('syncing');
+                setTimeout(() => card.classList.remove('syncing'), 1000);
+            }
+        }
+
+        function generateId() {
+            return 'prj_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Close modals on outside click
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        }
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>

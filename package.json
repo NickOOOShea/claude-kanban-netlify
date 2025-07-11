@@ -1,0 +1,17 @@
+{
+  "name": "claude-kanban-netlify",
+  "version": "1.0.0",
+  "description": "Cloud-based kanban board with Claude integration",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "echo 'No build needed'",
+    "deploy": "netlify deploy --prod"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.10.1"
+  }
+}
