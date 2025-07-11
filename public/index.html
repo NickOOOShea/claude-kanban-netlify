@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Kanban - Cloud Edition</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="claude-max-integration.js" defer></script>
     <style>
         * {
             box-sizing: border-box;
@@ -349,7 +350,7 @@
         <div class="auth-section">
             <span id="userEmail" style="color: #8b949e;"></span>
             <button class="btn btn-secondary" onclick="showAuthModal()" id="authBtn">Sign In</button>
-            <button class="btn btn-primary" onclick="showApiKeyModal()">🔑 Claude API</button>
+            <button class="btn btn-primary" onclick="showMaxHelp()">💎 Claude Max</button>
         </div>
     </div>
 
@@ -418,22 +419,38 @@
         </div>
     </div>
 
-    <!-- API Key Modal -->
-    <div id="apiKeyModal" class="modal">
+    <!-- Claude Max Help Modal -->
+    <div id="maxHelpModal" class="modal">
         <div class="modal-content">
-            <span class="close-btn" onclick="closeApiKeyModal()">&times;</span>
-            <h2>Claude API Configuration</h2>
-            <form onsubmit="saveApiKey(event)">
-                <div class="form-group">
-                    <label>Claude API Key (Optional)</label>
-                    <input type="password" id="apiKey" placeholder="sk-ant-api03-...">
-                    <small style="color: #8b949e;">
-                        Enter your Claude API key for direct integration. 
-                        Without it, you'll get copy/paste commands.
-                    </small>
-                </div>
-                <button type="submit" class="btn btn-primary">Save</button>
-            </form>
+            <span class="close-btn" onclick="closeMaxHelp()">&times;</span>
+            <h2>💎 Using Claude Max with Your Kanban Board</h2>
+            <div style="color: #8b949e; line-height: 1.6;">
+                <p><strong>You're already paying for Claude Max - no API key needed!</strong></p>
+                
+                <h3 style="margin-top: 1.5rem;">How it works:</h3>
+                <ol style="margin-left: 1.5rem;">
+                    <li>Click "💬 Chat" on any project</li>
+                    <li>Type your question or request</li>
+                    <li>The context auto-copies to your clipboard</li>
+                    <li>Paste in your Claude Max tab</li>
+                    <li>When Claude responds, paste it back here!</li>
+                </ol>
+                
+                <h3 style="margin-top: 1.5rem;">Smart Features:</h3>
+                <ul style="margin-left: 1.5rem;">
+                    <li>🔄 Auto-detects Claude responses when you paste</li>
+                    <li>📋 One-click context copying</li>
+                    <li>🎯 Structured updates (move, priority, subtasks)</li>
+                    <li>💾 All chat history saved locally</li>
+                </ul>
+                
+                <h3 style="margin-top: 1.5rem;">Pro Tip:</h3>
+                <p style="background: #0d1117; padding: 1rem; border-radius: 6px; margin-top: 0.5rem;">
+                    Keep your Claude Max tab open alongside your kanban board. 
+                    The integration works seamlessly with copy/paste!
+                </p>
+            </div>
+            <button class="btn btn-primary" onclick="closeMaxHelp()" style="margin-top: 1rem;">Got it!</button>
         </div>
     </div>
 
@@ -830,21 +847,38 @@
             addMessageToChat('user', message);
             input.value = '';
             
-            // Check if API key exists
-            const apiKey = localStorage.getItem('claudeApiKey');
-            if (apiKey) {
-                // Direct API call (would need backend)
-                addMessageToChat('system', 'Direct Claude integration coming soon!');
+            // Use Claude Max integration
+            if (window.claudeMax) {
+                const enhancedProject = {
+                    ...currentProject,
+                    userMessage: message
+                };
+                
+                const success = await window.claudeMax.copyProjectContext(enhancedProject);
+                
+                if (success) {
+                    addMessageToChat('system', '📋 Context copied! Paste in your Claude Max tab to continue.');
+                    addMessageToChat('system', '💡 Tip: When Claude responds with updates, paste them back here!');
+                } else {
+                    // Fallback if copy failed
+                    const context = generateClaudeCommand({
+                        project: currentProject,
+                        message: message,
+                        timestamp: new Date().toISOString()
+                    });
+                    addMessageToChat('claude', `Manual copy needed:\n\n${context}`);
+                }
+                
+                // Enable smart paste detection
+                window.claudeMax.enableSmartPaste();
             } else {
-                // Generate command for user
-                const context = {
+                // Fallback
+                const context = generateClaudeCommand({
                     project: currentProject,
                     message: message,
                     timestamp: new Date().toISOString()
-                };
-                
-                const command = generateClaudeCommand(context);
-                addMessageToChat('claude', `Copy this context to Claude:\n\n${command}`);
+                });
+                addMessageToChat('claude', `Copy this to Claude:\n\n${context}`);
             }
             
             // Save chat history
@@ -863,7 +897,12 @@ ${(context.project.subtasks || []).map(t => `- [${t.done ? 'x' : ' '}] ${t.text}
 
 USER MESSAGE: ${context.message}
 
-Please provide assistance with this project.`;
+I'm using Claude Max. Please help with this project and format any updates like:
+MOVE: done
+PRIORITY: high
+SUBTASKS:
+- [x] Completed task
+- [ ] New task`;
         }
 
         function addMessageToChat(sender, text) {
@@ -909,16 +948,12 @@ Please provide assistance with this project.`;
             document.getElementById('authModal').style.display = 'none';
         }
 
-        function showApiKeyModal() {
-            document.getElementById('apiKeyModal').style.display = 'block';
-            const savedKey = localStorage.getItem('claudeApiKey');
-            if (savedKey) {
-                document.getElementById('apiKey').value = savedKey;
-            }
+        function showMaxHelp() {
+            document.getElementById('maxHelpModal').style.display = 'block';
         }
 
-        function closeApiKeyModal() {
-            document.getElementById('apiKeyModal').style.display = 'none';
+        function closeMaxHelp() {
+            document.getElementById('maxHelpModal').style.display = 'none';
         }
 
         async function handleAuth(event) {
@@ -962,16 +997,36 @@ Please provide assistance with this project.`;
             loadLocalProjects();
         }
 
-        function saveApiKey(event) {
-            event.preventDefault();
-            const apiKey = document.getElementById('apiKey').value;
-            if (apiKey) {
-                localStorage.setItem('claudeApiKey', apiKey);
-            } else {
-                localStorage.removeItem('claudeApiKey');
+        // Apply updates from Claude when pasted
+        window.applyProjectUpdates = function(updates) {
+            if (!currentProject) return;
+            
+            Object.assign(currentProject, updates);
+            saveProjects();
+            renderProjects();
+            
+            addMessageToChat('system', '✅ Applied Claude\'s updates!');
+        };
+
+        // Listen for paste events in chat
+        document.addEventListener('DOMContentLoaded', () => {
+            const chatInput = document.getElementById('chatInput');
+            if (chatInput) {
+                chatInput.addEventListener('paste', (e) => {
+                    const text = e.clipboardData.getData('text');
+                    if (window.claudeMax && window.claudeMax.looksLikeClaudeResponse(text)) {
+                        e.preventDefault();
+                        chatInput.value = '';
+                        addMessageToChat('claude', text);
+                        
+                        const updates = window.claudeMax.parseClaudeResponse(text);
+                        if (Object.keys(updates).length > 0) {
+                            window.applyProjectUpdates(updates);
+                        }
+                    }
+                });
             }
-            closeApiKeyModal();
-        }
+        });
 
         function showSyncIndicator(projectId) {
             const card = document.querySelector(`[data-project-id="${projectId}"] .sync-indicator`);
